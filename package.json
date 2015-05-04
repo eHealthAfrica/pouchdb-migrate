@@ -1,0 +1,43 @@
+{
+  "name": "pouchdb-migrate",
+  "version": "1.0.0",
+  "description": "PouchDB plugin for running migrations.",
+  "main": "index.js",
+  "scripts": {
+    "test": "tape test.js | tap-spec",
+    "build": "mkdir -p dist && browserify index.js -o dist/pouchdb.migrate.js && npm run min",
+    "min": "uglifyjs dist/pouchdb.migrate.js -mc > dist/pouchdb.migrate.min.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/eHealthAfrica/pouchdb-migrate.git"
+  },
+  "keywords": [
+    "couchdb",
+    "migrate",
+    "migrator",
+    "pouchdb",
+    "plugin"
+  ],
+  "author": "Johannes J. Schmidt <schmidt@netzmerk.com> (http://die-tf.de/)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/eHealthAfrica/pouchdb-migrate/issues"
+  },
+  "homepage": "https://github.com/eHealthAfrica/pouchdb-migrate#readme",
+  "dependencies": {
+    "pouchdb": "pouchdb/pouchdb",
+    "pouchdb-extend": "^0.1.2",
+    "spark-md5": "0.0.5"
+  },
+  "devDependencies": {
+    "browserify": "^10.0.0",
+    "memdown": "^1.0.0",
+    "tap-spec": "^3.0.0",
+    "tape": "^4.0.0",
+    "uglify-js": "^2.4.20"
+  },
+  "browser": {
+    "crypto": false
+  }
+}

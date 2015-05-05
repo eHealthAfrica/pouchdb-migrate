@@ -7,22 +7,29 @@ PouchDB.plugin(require('./'))
 
 test('basic migration', function(t) {
   var db = new PouchDB('test', { db: memdown })
-  var doc = { _id: 'mydoc' }
+  var docs = [
+    { _id: 'mydoc' },
+    { _id: 'otherdoc' }
+  ]
   var migration = function(doc) {
+    if ('foo' in doc) return
+
     doc.foo = 'bar'
     return [doc]
   }
 
   db
-    .put(doc)
+    .bulkDocs(docs)
     .then(function() {
-      return db.migrate(migration)
+      return db.migrate(migration, { limit: 1 })
     })
     .then(function() {
-      return db.get(doc._id)
+      return db.allDocs({ include_docs: true })
     })
-    .then(function(doc) {
-      t.equal(doc.foo, 'bar', 'doc has foo')
+    .then(function(result) {
+      result.rows.forEach(function(row) {
+        t.equal(row.doc.foo, 'bar', row.id + ' has foo')
+      })
     })
     .then(t.end)
 })

@@ -1,8 +1,9 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
-var MD5 = require('./lib/md5')
 var Promise = require('pouchdb/extras/promise')
+var checkpointer = require('./lib/checkpointer')
+var migrate = require('./lib/migrate')
 
-exports.migrate = function(migration, callback) {
+exports.migrate = function(migration, options, callback) {
   var db = this
 
   if (!migration) {
@@ -12,47 +13,18 @@ exports.migrate = function(migration, callback) {
     throw(new Error('migration must be a function'))
   }
 
-  var promise = new Promise(function(resolve, reject) {
-    MD5(migration.toString(), function(error, id) {
-      if (error) { return reject(error) }
+  if (typeof options === 'function') {
+    callback = options
+    options = {}
+  }
+  if (typeof options === 'undefined') {
+    options = {}
+  }
 
-      var migrationId = '_local/' + id
-
-      db.get(migrationId, function(error, migrationStatus) {
-        if (error) {
-          migrationStatus = {
-            _id: migrationId,
-            last_seq: 0
-          }
-        }
-
-        var feed = db.changes({
-          include_docs: true,
-          since: migrationStatus.last_seq
-        })
-        
-        feed.on('change', function(change) {
-          var docs = migration(change.doc)
-          
-          if (!docs) { return }
-
-          migrationStatus.last_seq = change.seq
-          db.bulkDocs({ docs: docs }, function(error) {
-            if (error) { return reject(error) }
-
-            db.put(migrationStatus, function(error, response) {
-              if (error) { return reject(error) }
-
-              migrationStatus._rev = response.rev
-            })
-          })
-        })
-        
-        feed.on('error', reject)
-        feed.on('complete', resolve)
-      })
+  var promise = checkpointer(db, migration)
+    .then(function(cp) {
+      return migrate(db, cp, migration, options)
     })
-  })
 
   if (typeof callback === 'function') {
     return promise
@@ -72,7 +44,57 @@ if (typeof window !== 'undefined' && window.PouchDB) {
   window.PouchDB.plugin(exports)
 }
 
-},{"./lib/md5":2,"pouchdb/extras/promise":5}],2:[function(require,module,exports){
+},{"./lib/checkpointer":2,"./lib/migrate":4,"pouchdb/extras/promise":8}],2:[function(require,module,exports){
+var MD5 = require('./md5')
+var Promise = require('pouchdb/extras/promise')
+
+var md5Promise = function(data) {
+  return new Promise(function(resolve, reject) {
+    MD5(data, function(error, result) {
+      if (error) { return reject(error) }
+
+      resolve(result)
+    })
+  })
+}
+
+module.exports = function(db, migration) {
+  var doc = {
+    last_seq: 0
+  }
+
+  return md5Promise(migration.toString())
+    .then(function(md5sum) {
+      doc._id = '_local/' + md5sum
+    })
+    .then(function() {
+      return {
+        get: function() {
+          return db.get(doc._id)
+            .then(function(response) {
+              doc._rev = response._rev
+              doc.last_seq = response.last_seq
+            })
+            .catch(function(error) {
+              if (error.status !== 404) return Promise.reject()
+            })
+            .then(function() {
+              return doc.last_seq
+            })
+        },
+        set: function(seq) {
+          doc.last_seq = seq
+
+          return db.put(doc)
+            .then(function(response) {
+              doc._rev = response.rev
+            })
+        }
+      }
+    })
+}
+
+},{"./md5":3,"pouchdb/extras/promise":8}],3:[function(require,module,exports){
 (function (process,global){
 'use strict';
 /* istanbul ignore next */
@@ -197,9 +219,65 @@ module.exports = function (data, callback) {
 };
 
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"_process":4,"crypto":3,"spark-md5":25}],3:[function(require,module,exports){
+},{"_process":6,"crypto":5,"spark-md5":28}],4:[function(require,module,exports){
+var Promise = require('pouchdb/extras/promise')
+var extend = require('pouchdb-extend')
 
-},{}],4:[function(require,module,exports){
+module.exports = function migrate(db, checkpointer, migration, options) {
+  return checkpointer.get()
+    .then(function(since) {
+      return new Promise(function(resolve, reject) {
+        var docs = []
+
+        var feed = db.changes(extend({}, options, {
+          include_docs: true,
+          since: since
+        }))
+        
+        feed.on('change', function(change) {
+          var result = migration(change.doc)
+          if (!result) { return }
+
+          if (!options.live) {
+            docs = docs.concat(result)
+            return
+          }
+            
+          db
+            .bulkDocs({ docs: result })
+            .then(function(response) {
+              return checkpointer.set(change.update_seq)
+            })
+        })
+        
+        feed.on('complete', function(info) {
+          if (options.live) { return resolve(info) }
+
+          db
+            .bulkDocs({ docs: docs })
+            .then(function(response) {
+              return checkpointer.set(info.last_seq)
+            })
+            .then(function() {
+              return db.info()
+            })
+            .then(function(dbinfo) {
+              if (dbinfo.update_seq > info.last_seq) {
+                return migrate(db, checkpointer, migration, options)
+              }
+              return info
+            })
+            .then(resolve)
+        })
+
+        feed.on('error', reject)
+      })
+    })
+}
+
+},{"pouchdb-extend":7,"pouchdb/extras/promise":8}],5:[function(require,module,exports){
+
+},{}],6:[function(require,module,exports){
 // shim for using process in browser
 
 var process = module.exports = {};
@@ -291,12 +369,193 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],5:[function(require,module,exports){
+},{}],7:[function(require,module,exports){
+"use strict";
+
+// Extends method
+// (taken from http://code.jquery.com/jquery-1.9.0.js)
+// Populate the class2type map
+var class2type = {};
+
+var types = [
+  "Boolean", "Number", "String", "Function", "Array",
+  "Date", "RegExp", "Object", "Error"
+];
+for (var i = 0; i < types.length; i++) {
+  var typename = types[i];
+  class2type["[object " + typename + "]"] = typename.toLowerCase();
+}
+
+var core_toString = class2type.toString;
+var core_hasOwn = class2type.hasOwnProperty;
+
+function type(obj) {
+  if (obj === null) {
+    return String(obj);
+  }
+  return typeof obj === "object" || typeof obj === "function" ?
+    class2type[core_toString.call(obj)] || "object" :
+    typeof obj;
+}
+
+function isWindow(obj) {
+  return obj !== null && obj === obj.window;
+}
+
+function isPlainObject(obj) {
+  // Must be an Object.
+  // Because of IE, we also have to check the presence of
+  // the constructor property.
+  // Make sure that DOM nodes and window objects don't pass through, as well
+  if (!obj || type(obj) !== "object" || obj.nodeType || isWindow(obj)) {
+    return false;
+  }
+
+  try {
+    // Not own constructor property must be Object
+    if (obj.constructor &&
+      !core_hasOwn.call(obj, "constructor") &&
+      !core_hasOwn.call(obj.constructor.prototype, "isPrototypeOf")) {
+      return false;
+    }
+  } catch ( e ) {
+    // IE8,9 Will throw exceptions on certain host objects #9897
+    return false;
+  }
+
+  // Own properties are enumerated firstly, so to speed up,
+  // if last one is own, then all properties are own.
+  var key;
+  for (key in obj) {}
+
+  return key === undefined || core_hasOwn.call(obj, key);
+}
+
+
+function isFunction(obj) {
+  return type(obj) === "function";
+}
+
+var isArray = Array.isArray || function (obj) {
+  return type(obj) === "array";
+};
+
+function extend() {
+  // originally extend() was recursive, but this ended up giving us
+  // "call stack exceeded", so it's been unrolled to use a literal stack
+  // (see https://github.com/pouchdb/pouchdb/issues/2543)
+  var stack = [];
+  var i = -1;
+  var len = arguments.length;
+  var args = new Array(len);
+  while (++i < len) {
+    args[i] = arguments[i];
+  }
+  var container = {};
+  stack.push({args: args, result: {container: container, key: 'key'}});
+  var next;
+  while ((next = stack.pop())) {
+    extendInner(stack, next.args, next.result);
+  }
+  return container.key;
+}
+
+function extendInner(stack, args, result) {
+  var options, name, src, copy, copyIsArray, clone,
+    target = args[0] || {},
+    i = 1,
+    length = args.length,
+    deep = false,
+    numericStringRegex = /\d+/,
+    optionsIsArray;
+
+  // Handle a deep copy situation
+  if (typeof target === "boolean") {
+    deep = target;
+    target = args[1] || {};
+    // skip the boolean and the target
+    i = 2;
+  }
+
+  // Handle case when target is a string or something (possible in deep copy)
+  if (typeof target !== "object" && !isFunction(target)) {
+    target = {};
+  }
+
+  // extend jQuery itself if only one argument is passed
+  if (length === i) {
+    /* jshint validthis: true */
+    target = this;
+    --i;
+  }
+
+  for (; i < length; i++) {
+    // Only deal with non-null/undefined values
+    if ((options = args[i]) != null) {
+      optionsIsArray = isArray(options);
+      // Extend the base object
+      for (name in options) {
+        //if (options.hasOwnProperty(name)) {
+        if (!(name in Object.prototype)) {
+          if (optionsIsArray && !numericStringRegex.test(name)) {
+            continue;
+          }
+
+          src = target[name];
+          copy = options[name];
+
+          // Prevent never-ending loop
+          if (target === copy) {
+            continue;
+          }
+
+          // Recurse if we're merging plain objects or arrays
+          if (deep && copy && (isPlainObject(copy) ||
+              (copyIsArray = isArray(copy)))) {
+            if (copyIsArray) {
+              copyIsArray = false;
+              clone = src && isArray(src) ? src : [];
+
+            } else {
+              clone = src && isPlainObject(src) ? src : {};
+            }
+
+            // Never move original objects, clone them
+            stack.push({
+              args: [deep, clone, copy],
+              result: {
+                container: target,
+                key: name
+              }
+            });
+
+          // Don't bring in undefined values
+          } else if (copy !== undefined) {
+            if (!(isArray(options) && isFunction(copy))) {
+              target[name] = copy;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // "Return" the modified object by setting the key
+  // on the given container
+  result.container[result.key] = target;
+}
+
+
+module.exports = extend;
+
+
+
+},{}],8:[function(require,module,exports){
 'use strict';
 
 // allow external plugins to require('pouchdb/extras/promise')
 module.exports = require('../lib/deps/promise');
-},{"../lib/deps/promise":6}],6:[function(require,module,exports){
+},{"../lib/deps/promise":9}],9:[function(require,module,exports){
 'use strict';
 
 if (typeof Promise === 'function') {
@@ -304,13 +563,13 @@ if (typeof Promise === 'function') {
 } else {
   module.exports = require('bluebird');
 }
-},{"bluebird":10}],7:[function(require,module,exports){
+},{"bluebird":13}],10:[function(require,module,exports){
 'use strict';
 
 module.exports = INTERNAL;
 
 function INTERNAL() {}
-},{}],8:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 'use strict';
 var Promise = require('./promise');
 var reject = require('./reject');
@@ -354,7 +613,7 @@ function all(iterable) {
     }
   }
 }
-},{"./INTERNAL":7,"./handlers":9,"./promise":11,"./reject":14,"./resolve":15}],9:[function(require,module,exports){
+},{"./INTERNAL":10,"./handlers":12,"./promise":14,"./reject":17,"./resolve":18}],12:[function(require,module,exports){
 'use strict';
 var tryCatch = require('./tryCatch');
 var resolveThenable = require('./resolveThenable');
@@ -400,14 +659,14 @@ function getThen(obj) {
     };
   }
 }
-},{"./resolveThenable":16,"./states":17,"./tryCatch":18}],10:[function(require,module,exports){
+},{"./resolveThenable":19,"./states":20,"./tryCatch":21}],13:[function(require,module,exports){
 module.exports = exports = require('./promise');
 
 exports.resolve = require('./resolve');
 exports.reject = require('./reject');
 exports.all = require('./all');
 exports.race = require('./race');
-},{"./all":8,"./promise":11,"./race":13,"./reject":14,"./resolve":15}],11:[function(require,module,exports){
+},{"./all":11,"./promise":14,"./race":16,"./reject":17,"./resolve":18}],14:[function(require,module,exports){
 'use strict';
 
 var unwrap = require('./unwrap');
@@ -453,7 +712,7 @@ Promise.prototype.then = function (onFulfilled, onRejected) {
   return promise;
 };
 
-},{"./INTERNAL":7,"./queueItem":12,"./resolveThenable":16,"./states":17,"./unwrap":19}],12:[function(require,module,exports){
+},{"./INTERNAL":10,"./queueItem":15,"./resolveThenable":19,"./states":20,"./unwrap":22}],15:[function(require,module,exports){
 'use strict';
 var handlers = require('./handlers');
 var unwrap = require('./unwrap');
@@ -482,7 +741,7 @@ QueueItem.prototype.callRejected = function (value) {
 QueueItem.prototype.otherCallRejected = function (value) {
   unwrap(this.promise, this.onRejected, value);
 };
-},{"./handlers":9,"./unwrap":19}],13:[function(require,module,exports){
+},{"./handlers":12,"./unwrap":22}],16:[function(require,module,exports){
 'use strict';
 var Promise = require('./promise');
 var reject = require('./reject');
@@ -523,7 +782,7 @@ function race(iterable) {
     });
   }
 }
-},{"./INTERNAL":7,"./handlers":9,"./promise":11,"./reject":14,"./resolve":15}],14:[function(require,module,exports){
+},{"./INTERNAL":10,"./handlers":12,"./promise":14,"./reject":17,"./resolve":18}],17:[function(require,module,exports){
 'use strict';
 
 var Promise = require('./promise');
@@ -535,7 +794,7 @@ function reject(reason) {
 	var promise = new Promise(INTERNAL);
 	return handlers.reject(promise, reason);
 }
-},{"./INTERNAL":7,"./handlers":9,"./promise":11}],15:[function(require,module,exports){
+},{"./INTERNAL":10,"./handlers":12,"./promise":14}],18:[function(require,module,exports){
 'use strict';
 
 var Promise = require('./promise');
@@ -570,7 +829,7 @@ function resolve(value) {
       return EMPTYSTRING;
   }
 }
-},{"./INTERNAL":7,"./handlers":9,"./promise":11}],16:[function(require,module,exports){
+},{"./INTERNAL":10,"./handlers":12,"./promise":14}],19:[function(require,module,exports){
 'use strict';
 var handlers = require('./handlers');
 var tryCatch = require('./tryCatch');
@@ -603,13 +862,13 @@ function safelyResolveThenable(self, thenable) {
   }
 }
 exports.safely = safelyResolveThenable;
-},{"./handlers":9,"./tryCatch":18}],17:[function(require,module,exports){
+},{"./handlers":12,"./tryCatch":21}],20:[function(require,module,exports){
 // Lazy man's symbols for states
 
 exports.REJECTED = ['REJECTED'];
 exports.FULFILLED = ['FULFILLED'];
 exports.PENDING = ['PENDING'];
-},{}],18:[function(require,module,exports){
+},{}],21:[function(require,module,exports){
 'use strict';
 
 module.exports = tryCatch;
@@ -625,7 +884,7 @@ function tryCatch(func, value) {
   }
   return out;
 }
-},{}],19:[function(require,module,exports){
+},{}],22:[function(require,module,exports){
 'use strict';
 
 var immediate = require('immediate');
@@ -647,7 +906,7 @@ function unwrap(promise, func, value) {
     }
   });
 }
-},{"./handlers":9,"immediate":20}],20:[function(require,module,exports){
+},{"./handlers":12,"immediate":23}],23:[function(require,module,exports){
 'use strict';
 var types = [
   require('./nextTick'),
@@ -705,7 +964,7 @@ function immediate(task) {
     scheduleDrain();
   }
 }
-},{"./messageChannel":21,"./mutation.js":22,"./nextTick":3,"./stateChange":23,"./timeout":24}],21:[function(require,module,exports){
+},{"./messageChannel":24,"./mutation.js":25,"./nextTick":5,"./stateChange":26,"./timeout":27}],24:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -726,7 +985,7 @@ exports.install = function (func) {
   };
 };
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],22:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 (function (global){
 'use strict';
 //based off rsvp https://github.com/tildeio/rsvp.js
@@ -751,7 +1010,7 @@ exports.install = function (handle) {
   };
 };
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],23:[function(require,module,exports){
+},{}],26:[function(require,module,exports){
 (function (global){
 'use strict';
 
@@ -778,7 +1037,7 @@ exports.install = function (handle) {
   };
 };
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],24:[function(require,module,exports){
+},{}],27:[function(require,module,exports){
 'use strict';
 exports.test = function () {
   return true;
@@ -789,7 +1048,7 @@ exports.install = function (t) {
     setTimeout(t, 0);
   };
 };
-},{}],25:[function(require,module,exports){
+},{}],28:[function(require,module,exports){
 /*jshint bitwise:false*/
 /*global unescape*/
 

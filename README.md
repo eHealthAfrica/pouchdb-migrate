@@ -23,10 +23,17 @@ PouchDB.plugin(require('pouchdb-migrate'));
 ## Usage
 ```js
 var db = new PouchDB('mydb')
+
+// Migration script
+// * Return falsy value to skip the doc
+// * Make sure to prevent from loops
 var migration = function(doc) {
+  if ('foo' in doc) return
+
   doc.foo = 'bar'
   return [doc]
 }
+
 db.migrate(migration)
   .then //... every doc has `foo` now
 ```

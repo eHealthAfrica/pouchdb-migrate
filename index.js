@@ -1,7 +1,8 @@
-var MD5 = require('./lib/md5')
 var Promise = require('pouchdb/extras/promise')
+var checkpointer = require('./lib/checkpointer')
+var migrate = require('./lib/migrate')
 
-exports.migrate = function(migration, callback) {
+exports.migrate = function(migration, options, callback) {
   var db = this
 
   if (!migration) {
@@ -11,47 +12,18 @@ exports.migrate = function(migration, callback) {
     throw(new Error('migration must be a function'))
   }
 
-  var promise = new Promise(function(resolve, reject) {
-    MD5(migration.toString(), function(error, id) {
-      if (error) { return reject(error) }
+  if (typeof options === 'function') {
+    callback = options
+    options = {}
+  }
+  if (typeof options === 'undefined') {
+    options = {}
+  }
 
-      var migrationId = '_local/' + id
-
-      db.get(migrationId, function(error, migrationStatus) {
-        if (error) {
-          migrationStatus = {
-            _id: migrationId,
-            last_seq: 0
-          }
-        }
-
-        var feed = db.changes({
-          include_docs: true,
-          since: migrationStatus.last_seq
-        })
-        
-        feed.on('change', function(change) {
-          var docs = migration(change.doc)
-          
-          if (!docs) { return }
-
-          migrationStatus.last_seq = change.seq
-          db.bulkDocs({ docs: docs }, function(error) {
-            if (error) { return reject(error) }
-
-            db.put(migrationStatus, function(error, response) {
-              if (error) { return reject(error) }
-
-              migrationStatus._rev = response.rev
-            })
-          })
-        })
-        
-        feed.on('error', reject)
-        feed.on('complete', resolve)
-      })
+  var promise = checkpointer(db, migration)
+    .then(function(cp) {
+      return migrate(db, cp, migration, options)
     })
-  })
 
   if (typeof callback === 'function') {
     return promise

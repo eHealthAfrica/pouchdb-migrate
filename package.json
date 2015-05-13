@@ -1,6 +1,6 @@
 {
   "name": "pouchdb-migrate",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "PouchDB plugin for running migrations.",
   "main": "index.js",
   "scripts": {

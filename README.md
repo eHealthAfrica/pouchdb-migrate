@@ -1,6 +1,9 @@
 # pouchdb-migrate
 PouchDB plugin for running migrations.
 
+[![Build
+Status](https://travis-ci.org/eHealthAfrica/pouchdb-migrate.svg?branch=master)](https://travis-ci.org/eHealthAfrica/pouchdb-migrate)
+
 ## Setup
 ```html
 <script src="pouchdb.js"></script>

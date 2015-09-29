@@ -37,7 +37,7 @@
     "tap-spec": "^3.0.0",
     "tape": "^4.0.0",
     "uglify-js": "^2.4.20",
-    "semantic-release": "^4.3.5"
+    "semantic-release": "6.0.3"
   },
   "browser": {
     "crypto": false

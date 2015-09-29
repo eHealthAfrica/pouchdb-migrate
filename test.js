@@ -21,7 +21,7 @@ test('basic migration', function(t) {
   db
     .bulkDocs(docs)
     .then(function() {
-      return db.migrate(migration, { limit: 1 })
+      return db.migrate(migration, { limit: docs.length })
     })
     .then(function() {
       return db.allDocs({ include_docs: true })

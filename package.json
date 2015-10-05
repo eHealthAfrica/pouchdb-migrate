@@ -35,7 +35,7 @@
     "browserify": "11.2.0",
     "memdown": "1.1.0",
     "tap-spec": "3.0.0",
-    "tape": "4.2.0",
+    "tape": "4.2.1",
     "uglify-js": "2.4.24",
     "semantic-release": "6.0.3"
   },

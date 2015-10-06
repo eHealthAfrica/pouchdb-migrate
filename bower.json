@@ -1,0 +1,24 @@
+{
+  "name": "pouchdb-migrate",
+  "main": "dist/pouchdb.migrate.js",
+  "version": "1.1.1",
+  "homepage": "https://github.com/eHealthAfrica/pouchdb-migrate",
+  "authors": [
+    "Johannes J. Schmidt <jo@die-tf.de>"
+  ],
+  "description": "PouchDB plugin for running migrations.",
+  "moduleType": [
+    "node"
+  ],
+  "keywords": [
+    "pouchdb"
+  ],
+  "license": "Apache-2.0",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "test",
+    "tests"
+  ]
+}

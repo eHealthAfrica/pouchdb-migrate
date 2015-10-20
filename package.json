@@ -26,18 +26,18 @@
   },
   "homepage": "https://github.com/eHealthAfrica/pouchdb-migrate#readme",
   "dependencies": {
-    "async": "1.4.2",
-    "pouchdb": "5.0.0",
-    "pouchdb-extend": "0.1.2",
-    "spark-md5": "0.0.5"
+    "async": "^1.4.2",
+    "pouchdb": "^5.0.0",
+    "pouchdb-extend": "^0.1.2",
+    "spark-md5": "^0.0.5"
   },
   "devDependencies": {
-    "browserify": "11.2.0",
-    "memdown": "1.1.0",
-    "tap-spec": "4.1.0",
-    "tape": "4.2.1",
-    "uglify-js": "2.5.0",
-    "semantic-release": "6.0.3"
+    "browserify": "^11.2.0",
+    "memdown": "^1.1.0",
+    "tap-spec": "^4.1.0",
+    "tape": "^4.2.1",
+    "uglify-js": "^2.5.0",
+    "semantic-release": "^6.0.3"
   },
   "browser": {
     "crypto": false

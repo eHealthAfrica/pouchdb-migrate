@@ -26,7 +26,7 @@
   },
   "homepage": "https://github.com/eHealthAfrica/pouchdb-migrate#readme",
   "dependencies": {
-    "async": "^1.4.2",
+    "async": "^1.5.1",
     "pouchdb": "^5.0.0",
     "pouchdb-extend": "^0.1.2",
     "spark-md5": "^2.0.0"

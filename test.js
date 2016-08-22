@@ -33,3 +33,14 @@ test('basic migration', function(t) {
     })
     .then(t.end)
 })
+
+test('boing bug', function(t) {
+  var db = new PouchDB('test', { db: memdown })
+
+  var migration = function(doc) {
+    return [doc]
+  }
+
+  db.migrate(migration)
+    .then(t.end)
+})

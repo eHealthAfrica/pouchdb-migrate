@@ -1,4 +1,4 @@
-var Promise = require('pouchdb/extras/promise')
+var Promise = require('pouchdb-promise')
 var checkpointer = require('./lib/checkpointer')
 var migrate = require('./lib/migrate')
 

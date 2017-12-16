@@ -1,12 +1,12 @@
 var test = require('tape')
-var PouchDB = require('pouchdb')
-var memdown = require('memdown')
+var PouchDB = require('pouchdb-core')
 
+PouchDB.plugin(require('pouchdb-adapter-memory'))
 PouchDB.plugin(require('./'))
 
 
 test('basic migration', function(t) {
-  var db = new PouchDB('test', { db: memdown })
+  var db = new PouchDB('test', { adapter: 'memory' })
   var docs = [
     { _id: 'mydoc' },
     { _id: 'otherdoc' }
